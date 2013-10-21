@@ -258,7 +258,7 @@ static int vpu_open(struct inode *inode, struct file *filp)
 #ifdef CONFIG_SOC_IMX6Q
 		clk_enable(vpu_clk);
 		if (READ_REG(BIT_CUR_PC))
-			printk(KERN_DEBUG "Not power off before vpu open!\n");
+			pr_debug("Not power off before vpu open!\n");
 		clk_disable(vpu_clk);
 #endif
 	}
@@ -528,6 +528,20 @@ static long vpu_ioctl(struct file *filp, u_int cmd,
 		}
 		break;
 	}
+	case VPU_IOC_LOCK_DEV:
+		{
+			u32 lock_en;
+
+			if (get_user(lock_en, (u32 __user *) arg))
+				return -EFAULT;
+
+			if (lock_en)
+				mutex_lock(&vpu_data.lock);
+			else
+				mutex_unlock(&vpu_data.lock);
+
+			break;
+		}
 	default:
 		{
 			printk(KERN_ERR "No such IOCTL, cmd is %d\n", cmd);
@@ -1054,6 +1068,16 @@ static void __exit vpu_exit(void)
 	vpu_free_dma_buffer(&bitwork_mem);
 	vpu_free_dma_buffer(&pic_para_mem);
 	vpu_free_dma_buffer(&user_data_mem);
+
+	/* reset VPU state */
+	if (!IS_ERR(vpu_regulator))
+		regulator_enable(vpu_regulator);
+	clk_enable(vpu_clk);
+	if (vpu_plat->reset)
+		vpu_plat->reset();
+	clk_disable(vpu_clk);
+	if (!IS_ERR(vpu_regulator))
+		regulator_disable(vpu_regulator);
 
 	clk_put(vpu_clk);
 

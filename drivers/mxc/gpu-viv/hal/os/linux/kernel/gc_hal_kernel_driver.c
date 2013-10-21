@@ -131,6 +131,9 @@ module_param(fastClear, int, 0644);
 static int compression = -1;
 module_param(compression, int, 0644);
 
+static int powerManagement = 1;
+module_param(powerManagement, int, 0644);
+
 static int signal = 48;
 module_param(signal, int, 0644);
 
@@ -145,6 +148,9 @@ module_param(logFileSize,uint, 0644);
 
 static int showArgs = 0;
 module_param(showArgs, int, 0644);
+
+int gpu3DMinClock = 0;
+module_param(gpu3DMinClock, int, 0644);
 
 #if ENABLE_GPU_CLOCK_BY_DRIVER
     unsigned long coreClock = 156000000;
@@ -231,7 +237,7 @@ int drv_open(
         gcmkONERROR(gcvSTATUS_INVALID_ARGUMENT);
     }
 
-    data = kmalloc(sizeof(gcsHAL_PRIVATE_DATA), GFP_KERNEL | __GFP_NOWARN);
+    data = kmalloc(sizeof(gcsHAL_PRIVATE_DATA), GFP_KERNEL);
 
     if (data == gcvNULL)
     {
@@ -663,7 +669,7 @@ static int drv_mmap(
 
 #if !gcdPAGED_MEMORY_CACHEABLE
     vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-    vma->vm_flags    |= VM_IO | VM_DONTCOPY | VM_DONTEXPAND;
+    vma->vm_flags    |= gcdVM_FLAGS;
 #endif
     vma->vm_pgoff     = 0;
 
@@ -778,6 +784,9 @@ static int drv_init(struct device *pdev)
     }
 #endif
 
+    printk(KERN_INFO "Galcore version %d.%d.%d.%d\n",
+        gcvVERSION_MAJOR, gcvVERSION_MINOR, gcvVERSION_PATCH, gcvVERSION_BUILD);
+
     if (showArgs)
     {
         printk("galcore options:\n");
@@ -807,7 +816,8 @@ static int drv_init(struct device *pdev)
         printk("  signal            = %d\n",      signal);
         printk("  baseAddress       = 0x%08lX\n", baseAddress);
         printk("  physSize          = 0x%08lX\n", physSize);
-	printk(" logFileSize         = %d KB \n",     logFileSize);
+        printk("  logFileSize       = %d KB \n",  logFileSize);
+        printk("  powerManagement   = %d\n",      powerManagement);
 #if ENABLE_GPU_CLOCK_BY_DRIVER
         printk("  coreClock       = %lu\n",     coreClock);
 #endif
@@ -830,6 +840,7 @@ static int drv_init(struct device *pdev)
         bankSize, fastClear, compression, baseAddress, physSize, signal,
         logFileSize,
         pdev,
+        powerManagement,
         &device
         ));
 
@@ -1100,7 +1111,7 @@ static int __devinit gpu_probe(struct platform_device *pdev)
     return ret;
 }
 
-static int __devinit gpu_remove(struct platform_device *pdev)
+static int __devexit gpu_remove(struct platform_device *pdev)
 {
     gcmkHEADER();
 #if gcdENABLE_FSCALE_VAL_ADJUST
@@ -1112,7 +1123,7 @@ static int __devinit gpu_remove(struct platform_device *pdev)
     return 0;
 }
 
-static int __devinit gpu_suspend(struct platform_device *dev, pm_message_t state)
+static int gpu_suspend(struct platform_device *dev, pm_message_t state)
 {
     gceSTATUS status;
     gckGALDEVICE device;
@@ -1162,7 +1173,7 @@ static int __devinit gpu_suspend(struct platform_device *dev, pm_message_t state
     return 0;
 }
 
-static int __devinit gpu_resume(struct platform_device *dev)
+static int gpu_resume(struct platform_device *dev)
 {
     gceSTATUS status;
     gckGALDEVICE device;
@@ -1241,27 +1252,39 @@ static const struct of_device_id mxs_gpu_dt_ids[] = {
 MODULE_DEVICE_TABLE(of, mxs_gpu_dt_ids);
 
 #ifdef CONFIG_PM
-int gpu_runtime_suspend(struct device *dev)
+static int gpu_runtime_suspend(struct device *dev)
 {
 	release_bus_freq(BUS_FREQ_HIGH);
 	return 0;
 }
 
-int gpu_runtime_resume(struct device *dev)
+static int gpu_runtime_resume(struct device *dev)
 {
 	request_bus_freq(BUS_FREQ_HIGH);
 	return 0;
 }
 
+static int gpu_system_suspend(struct device *dev)
+{
+	pm_message_t state={0};
+	return gpu_suspend(to_platform_device(dev), state);
+}
+
+static int gpu_system_resume(struct device *dev)
+{
+	return gpu_resume(to_platform_device(dev));
+}
+
 static const struct dev_pm_ops gpu_pm_ops = {
 	SET_RUNTIME_PM_OPS(gpu_runtime_suspend, gpu_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(gpu_system_suspend, gpu_system_resume)
 };
 #endif
 #endif
 
 static struct platform_driver gpu_driver = {
     .probe      = gpu_probe,
-    .remove     = gpu_remove,
+    .remove     = __devexit_p(gpu_remove),
 
     .suspend    = gpu_suspend,
     .resume     = gpu_resume,

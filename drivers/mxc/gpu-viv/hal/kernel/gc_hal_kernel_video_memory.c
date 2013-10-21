@@ -1027,7 +1027,8 @@ gckVIDMEM_AllocateLinear(
     )
     {
         /* The left memory is for small memory.*/
-        gcmkONERROR(gcvSTATUS_OUT_OF_MEMORY);
+        status = gcvSTATUS_OUT_OF_MEMORY;
+        goto OnError;
     }
 #endif
 
@@ -2143,6 +2144,9 @@ gckVIDMEM_Unlock(
 
             if (!Node->Virtual.contiguous
             &&  (Node->Virtual.lockeds[Kernel->core] == 1)
+#if gcdENABLE_VG
+            && (Kernel->vg == gcvNULL)
+#endif
             )
             {
                 if (Type == gcvSURF_BITMAP)

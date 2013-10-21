@@ -55,6 +55,7 @@ const char * _PLATFORM = "\n\0$PLATFORM$Linux$\n";
 #endif
 
 #define USER_SIGNAL_TABLE_LEN_INIT  64
+#define gcdSUPPRESS_OOM_MESSAGE 1
 
 #define MEMORY_LOCK(os) \
     gcmkVERIFY_OK(gckOS_AcquireMutex( \
@@ -83,6 +84,12 @@ const char * _PLATFORM = "\n\0$PLATFORM$Linux$\n";
 #elif !gcdNONPAGED_MEMORY_CACHEABLE
 #define gcmkIOREMAP                 ioremap_nocache
 #define gcmkNONPAGED_MEMROY_PROT(x) pgprot_noncached(x)
+#endif
+
+#if gcdSUPPRESS_OOM_MESSAGE
+#define gcdNOWARN __GFP_NOWARN
+#else
+#define gcdNOWARN 0
 #endif
 
 #define gcdINFINITE_TIMEOUT     (60 * 1000)
@@ -261,7 +268,7 @@ _CreateMdl(
 
     gcmkHEADER_ARG("ProcessID=%d", ProcessID);
 
-    mdl = (PLINUX_MDL)kzalloc(sizeof(struct _LINUX_MDL), GFP_KERNEL | __GFP_NOWARN);
+    mdl = (PLINUX_MDL)kzalloc(sizeof(struct _LINUX_MDL), GFP_KERNEL | gcdNOWARN);
     if (mdl == gcvNULL)
     {
         gcmkFOOTER_NO();
@@ -322,7 +329,7 @@ _CreateMdlMap(
 
     gcmkHEADER_ARG("Mdl=0x%X ProcessID=%d", Mdl, ProcessID);
 
-    mdlMap = (PLINUX_MDL_MAP)kmalloc(sizeof(struct _LINUX_MDL_MAP), GFP_KERNEL | __GFP_NOWARN);
+    mdlMap = (PLINUX_MDL_MAP)kmalloc(sizeof(struct _LINUX_MDL_MAP), GFP_KERNEL | gcdNOWARN);
     if (mdlMap == gcvNULL)
     {
         gcmkFOOTER_NO();
@@ -481,7 +488,7 @@ _NonContiguousAlloc(
 
     size = NumPages * sizeof(struct page *);
 
-    pages = kmalloc(size, GFP_KERNEL | __GFP_NOWARN);
+    pages = kmalloc(size, GFP_KERNEL | gcdNOWARN);
 
     if (!pages)
     {
@@ -496,7 +503,7 @@ _NonContiguousAlloc(
 
     for (i = 0; i < NumPages; i++)
     {
-        p = alloc_page(GFP_KERNEL | __GFP_HIGHMEM | __GFP_NOWARN);
+        p = alloc_page(GFP_KERNEL | __GFP_HIGHMEM | gcdNOWARN);
 
         if (!p)
         {
@@ -762,7 +769,7 @@ _AllocateIntegerId(
     int result;
 
 again:
-    if (idr_pre_get(&Database->idr, GFP_KERNEL | __GFP_NOWARN) == 0)
+    if (idr_pre_get(&Database->idr, GFP_KERNEL | gcdNOWARN) == 0)
     {
         return gcvSTATUS_OUT_OF_MEMORY;
     }
@@ -869,6 +876,60 @@ _UnmapUserLogical(
 #endif
 }
 
+gceSTATUS
+_QueryProcessPageTable(
+    IN gctPOINTER Logical,
+    OUT gctUINT32 * Address
+    )
+{
+    spinlock_t *lock;
+    gctUINTPTR_T logical = (gctUINTPTR_T)Logical;
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t *pte;
+
+    if (!current->mm)
+    {
+        return gcvSTATUS_NOT_FOUND;
+    }
+
+    pgd = pgd_offset(current->mm, logical);
+    if (pgd_none(*pgd) || pgd_bad(*pgd))
+    {
+        return gcvSTATUS_NOT_FOUND;
+    }
+
+    pud = pud_offset(pgd, logical);
+    if (pud_none(*pud) || pud_bad(*pud))
+    {
+        return gcvSTATUS_NOT_FOUND;
+    }
+
+    pmd = pmd_offset(pud, logical);
+    if (pmd_none(*pmd) || pmd_bad(*pmd))
+    {
+        return gcvSTATUS_NOT_FOUND;
+    }
+
+    pte = pte_offset_map_lock(current->mm, pmd, logical, &lock);
+    if (!pte)
+    {
+        return gcvSTATUS_NOT_FOUND;
+    }
+
+    if (!pte_present(*pte))
+    {
+        pte_unmap_unlock(pte, lock);
+        return gcvSTATUS_NOT_FOUND;
+    }
+
+    *Address = (pte_pfn(*pte) << PAGE_SHIFT) | (logical & ~PAGE_MASK);
+    pte_unmap_unlock(pte, lock);
+
+    return gcvSTATUS_OK;
+}
+
 /*******************************************************************************
 **
 **  gckOS_Construct
@@ -900,7 +961,7 @@ gckOS_Construct(
     gcmkVERIFY_ARGUMENT(Os != gcvNULL);
 
     /* Allocate the gckOS object. */
-    os = (gckOS) kmalloc(gcmSIZEOF(struct _gckOS), GFP_KERNEL | __GFP_NOWARN);
+    os = (gckOS) kmalloc(gcmSIZEOF(struct _gckOS), GFP_KERNEL | gcdNOWARN);
 
     if (os == gcvNULL)
     {
@@ -1106,6 +1167,9 @@ _CreateKernelVirtualMapping(
                     numPages,
                     0,
                     PAGE_KERNEL);
+
+        /* Trigger a page fault. */
+        memset(addr, 0, numPages * PAGE_SIZE);
     }
 #else
     struct page ** pages;
@@ -1114,7 +1178,7 @@ _CreateKernelVirtualMapping(
 
     if (Mdl->contiguous)
     {
-        pages = kmalloc(sizeof(struct page *) * numPages, GFP_KERNEL | __GFP_NOWARN);
+        pages = kmalloc(sizeof(struct page *) * numPages, GFP_KERNEL | gcdNOWARN);
 
         if (!pages)
         {
@@ -1135,6 +1199,9 @@ _CreateKernelVirtualMapping(
 
     /* ioremap() can't work on system memory since 2.6.38. */
     addr = vmap(pages, numPages, 0, gcmkNONPAGED_MEMROY_PROT(PAGE_KERNEL));
+
+    /* Trigger a page fault. */
+    memset(addr, 0, numPages * PAGE_SIZE);
 
     if (free)
     {
@@ -1325,7 +1392,7 @@ gckOS_AllocateMemory(
     }
     else
     {
-        memory = (gctPOINTER) kmalloc(Bytes, GFP_KERNEL | __GFP_NOWARN);
+        memory = (gctPOINTER) kmalloc(Bytes, GFP_KERNEL | gcdNOWARN);
     }
 
     if (memory == gcvNULL)
@@ -1540,7 +1607,7 @@ gckOS_MapMemory(
 #else
 #if !gcdPAGED_MEMORY_CACHEABLE
         mdlMap->vma->vm_page_prot = gcmkPAGED_MEMROY_PROT(mdlMap->vma->vm_page_prot);
-        mdlMap->vma->vm_flags |= VM_IO | VM_DONTCOPY | VM_DONTEXPAND | VM_RESERVED;
+        mdlMap->vma->vm_flags |= gcdVM_FLAGS;
 #   endif
         mdlMap->vma->vm_pgoff = 0;
 
@@ -1844,7 +1911,7 @@ gckOS_AllocateNonPagedMemory(
         addr = dma_alloc_coherent(gcvNULL,
                 mdl->numPages * PAGE_SIZE,
                 &mdl->dmaHandle,
-                GFP_KERNEL | __GFP_NOWARN);
+                GFP_KERNEL | gcdNOWARN);
     }
 #else
     size    = mdl->numPages * PAGE_SIZE;
@@ -1855,7 +1922,7 @@ gckOS_AllocateNonPagedMemory(
     if (page == gcvNULL)
 #endif
     {
-        page = alloc_pages(GFP_KERNEL | __GFP_NOWARN, order);
+        page = alloc_pages(GFP_KERNEL | gcdNOWARN, order);
     }
 
     if (page == gcvNULL)
@@ -1987,7 +2054,7 @@ gckOS_AllocateNonPagedMemory(
         }
 #else
         mdlMap->vma->vm_page_prot = gcmkNONPAGED_MEMROY_PROT(mdlMap->vma->vm_page_prot);
-        mdlMap->vma->vm_flags |= VM_IO | VM_DONTCOPY | VM_DONTEXPAND | VM_RESERVED;
+        mdlMap->vma->vm_flags |= gcdVM_FLAGS;
         mdlMap->vma->vm_pgoff = 0;
 
         if (remap_pfn_range(mdlMap->vma,
@@ -2367,12 +2434,18 @@ gckOS_GetPhysicalAddress(
     gcmkVERIFY_OBJECT(Os, gcvOBJ_OS);
     gcmkVERIFY_ARGUMENT(Address != gcvNULL);
 
-    /* Get current process ID. */
-    processID = _GetProcessID();
+    /* Query page table of current process first. */
+    status = _QueryProcessPageTable(Logical, Address);
 
-    /* Route through other function. */
-    gcmkONERROR(
-        gckOS_GetPhysicalAddressProcess(Os, Logical, processID, Address));
+    if (gcmIS_ERROR(status))
+    {
+        /* Get current process ID. */
+        processID = _GetProcessID();
+
+        /* Route through other function. */
+        gcmkONERROR(
+            gckOS_GetPhysicalAddressProcess(Os, Logical, processID, Address));
+    }
 
     /* Success. */
     gcmkFOOTER_ARG("*Address=0x%08x", *Address);
@@ -3782,6 +3855,9 @@ gckOS_AllocatePagedMemoryEx(
     gctSIZE_T bytes;
     gctBOOL locked = gcvFALSE;
     gceSTATUS status;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+    gctPOINTER addr = gcvNULL;
+#endif
 
     gcmkHEADER_ARG("Os=0x%X Contiguous=%d Bytes=%lu", Os, Contiguous, Bytes);
 
@@ -3807,13 +3883,27 @@ gckOS_AllocatePagedMemoryEx(
     {
         /* Get contiguous pages, and suppress warning (stack dump) from kernel when
            we run out of memory. */
-        mdl->u.contiguousPages =
-            alloc_pages(GFP_KERNEL | __GFP_NOWARN | __GFP_NORETRY, GetOrder(numPages));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+        addr =
+            alloc_pages_exact(numPages * PAGE_SIZE, GFP_KERNEL | gcdNOWARN | __GFP_NORETRY);
 
+        mdl->u.contiguousPages = addr
+                               ? virt_to_page(addr)
+                               : gcvNULL;
+
+        mdl->exact = gcvTRUE;
+#else
+        mdl->u.contiguousPages =
+            alloc_pages(GFP_KERNEL | gcdNOWARN | __GFP_NORETRY, GetOrder(numPages));
+#endif
         if (mdl->u.contiguousPages == gcvNULL)
         {
             mdl->u.contiguousPages =
-                alloc_pages(GFP_KERNEL | __GFP_HIGHMEM | __GFP_NOWARN, GetOrder(numPages));
+                alloc_pages(GFP_KERNEL | __GFP_HIGHMEM | gcdNOWARN, GetOrder(numPages));
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+            mdl->exact = gcvFALSE;
+#endif
         }
     }
     else
@@ -3958,7 +4048,16 @@ gckOS_FreePagedMemory(
 
     if (mdl->contiguous)
     {
-        __free_pages(mdl->u.contiguousPages, GetOrder(mdl->numPages));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+        if (mdl->exact == gcvTRUE)
+        {
+            free_pages_exact(page_address(mdl->u.contiguousPages), mdl->numPages * PAGE_SIZE);
+        }
+        else
+#endif
+        {
+            __free_pages(mdl->u.contiguousPages, GetOrder(mdl->numPages));
+        }
     }
     else
     {
@@ -4139,7 +4238,7 @@ gckOS_LockPages(
             return gcvSTATUS_OUT_OF_RESOURCES;
         }
 
-        mdlMap->vma->vm_flags |= VM_RESERVED;
+        mdlMap->vma->vm_flags |= gcdVM_FLAGS;
 #if !gcdPAGED_MEMORY_CACHEABLE
         if (Cacheable == gcvFALSE)
         {
@@ -4793,7 +4892,7 @@ gckOS_MapUserPointer(
     gcmkVERIFY_ARGUMENT(Size > 0);
     gcmkVERIFY_ARGUMENT(KernelPointer != gcvNULL);
 
-    buf = kmalloc(Size, GFP_KERNEL | __GFP_NOWARN);
+    buf = kmalloc(Size, GFP_KERNEL | gcdNOWARN);
     if (buf == gcvNULL)
     {
         gcmkTRACE(
@@ -5208,7 +5307,7 @@ OnError:
         MEMORY_MAP_LOCK(Os);
 
         /* Allocate the Info struct. */
-        info = (gcsPageInfo_PTR)kmalloc(sizeof(gcsPageInfo), GFP_KERNEL | __GFP_NOWARN);
+        info = (gcsPageInfo_PTR)kmalloc(sizeof(gcsPageInfo), GFP_KERNEL | gcdNOWARN);
 
         if (info == gcvNULL)
         {
@@ -5217,7 +5316,7 @@ OnError:
         }
 
         /* Allocate the array of page addresses. */
-        pages = (struct page **)kmalloc(pageCount * sizeof(struct page *), GFP_KERNEL | __GFP_NOWARN);
+        pages = (struct page **)kmalloc(pageCount * sizeof(struct page *), GFP_KERNEL | gcdNOWARN);
 
         if (pages == gcvNULL)
         {
@@ -6436,7 +6535,7 @@ gckOS_CreateSemaphore(
     gcmkVERIFY_ARGUMENT(Semaphore != gcvNULL);
 
     /* Allocate the semaphore structure. */
-    sem = (struct semaphore *)kmalloc(gcmSIZEOF(struct semaphore), GFP_KERNEL | __GFP_NOWARN);
+    sem = (struct semaphore *)kmalloc(gcmSIZEOF(struct semaphore), GFP_KERNEL | gcdNOWARN);
     if (sem == gcvNULL)
     {
         gcmkONERROR(gcvSTATUS_OUT_OF_MEMORY);
@@ -6753,8 +6852,13 @@ gckOS_SetGPUPower(
     }
 	if((Power == gcvTRUE) && (oldPowerState == gcvFALSE))
 	{
-		if(!IS_ERR(Os->device->gpu_regulator))
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
+        if(!IS_ERR(Os->device->gpu_regulator))
             regulator_enable(Os->device->gpu_regulator);
+#else
+        imx_gpc_power_up_pu(true);
+#endif
+
 #ifdef CONFIG_PM
 		pm_runtime_get_sync(Os->device->pmdev);
 #endif
@@ -6864,8 +6968,14 @@ gckOS_SetGPUPower(
 #ifdef CONFIG_PM
 		pm_runtime_put_sync(Os->device->pmdev);
 #endif
-		if(!IS_ERR(Os->device->gpu_regulator))
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
+        if(!IS_ERR(Os->device->gpu_regulator))
             regulator_disable(Os->device->gpu_regulator);
+#else
+        imx_gpc_power_up_pu(false);
+#endif
+
 	}
     /* TODO: Put your code here. */
     gcmkFOOTER_NO();
@@ -7179,7 +7289,7 @@ gckOS_CreateSignal(
     gcmkVERIFY_ARGUMENT(Signal != gcvNULL);
 
     /* Create an event structure. */
-    signal = (gcsSIGNAL_PTR) kmalloc(sizeof(gcsSIGNAL), GFP_KERNEL | __GFP_NOWARN);
+    signal = (gcsSIGNAL_PTR) kmalloc(sizeof(gcsSIGNAL), GFP_KERNEL | gcdNOWARN);
 
     if (signal == gcvNULL)
     {
@@ -7924,7 +8034,7 @@ gckOS_CreateSemaphoreVG(
     do
     {
         /* Allocate the semaphore structure. */
-    	newSemaphore = (struct semaphore *)kmalloc(gcmSIZEOF(struct semaphore), GFP_KERNEL | __GFP_NOWARN);
+    	newSemaphore = (struct semaphore *)kmalloc(gcmSIZEOF(struct semaphore), GFP_KERNEL | gcdNOWARN);
     	if (newSemaphore == gcvNULL)
     	{
         	gcmkERR_BREAK(gcvSTATUS_OUT_OF_MEMORY);
