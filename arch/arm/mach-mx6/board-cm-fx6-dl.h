@@ -164,9 +164,8 @@ static iomux_v3_cfg_t cm_fx6_dl_pads[] = {
 	/* DVI_DDC_SEL */
 	MX6DL_PAD_GPIO_2__GPIO_1_2,
 
-	/* CAN1 */
-	MX6DL_PAD_KEY_COL2__CAN1_TXCAN,
-	MX6DL_PAD_KEY_ROW2__CAN1_RXCAN,
+	/* CEC line */
+	MX6Q_PAD_KEY_ROW2__HDMI_TX_CEC_LINE, /* HDMI CEC signal */
 
 	/* SPDIF */
 	MX6DL_PAD_GPIO_16__SPDIF_IN1,
