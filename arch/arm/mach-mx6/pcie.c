@@ -322,7 +322,9 @@ static int imx_pcie_link_up(void __iomem *dbi_base)
 
 static void imx_pcie_regions_setup(struct device *dev, void __iomem *dbi_base)
 {
+
 	struct imx_pcie_platform_data *pdata = dev->platform_data;
+
 #ifdef CONFIG_PCI_MSI
 	unsigned int i;
 	void __iomem *p = dbi_base + PCIE_PL_MSIC_INT;
