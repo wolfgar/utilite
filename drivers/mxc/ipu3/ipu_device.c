@@ -855,7 +855,7 @@ static int update_split_setting(struct ipu_task_entry *t, bool vdi_split)
 				t->output.format,
 				&left_stripe,
 				&right_stripe);
-		if (ret)
+                if (ret)
 			dev_dbg(t->dev, "Warn: no:0x%x,calc_stripes ret:%d\n",
 				 t->task_no, ret);
 		t->set.sp_setting.iw = left_stripe.input_width;
