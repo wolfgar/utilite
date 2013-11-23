@@ -55,7 +55,7 @@
 #define IOMUXC_GPR4_VDOA_CACHE_EN	(0xf << 28)
 #define IOMUXC_GPR4_VPU_CACHE_EN	(0xcc)
 #define IOMUXC_GPR4_IPU_CACHE_EN	(0x3)
-#define IOMUXC_GPR6_IPU1_QOS		(0x007f007f)
+#define IOMUXC_GPR6_IPU1_QOS		(0xffffffff)
 #define IOMUXC_GPR7_IPU2_QOS		(0x007f007f)
 
 /* MMDC */
