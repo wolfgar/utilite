@@ -90,6 +90,8 @@ int set_cpu_freq(int freq)
 			ret = regulator_set_voltage(soc_regulator, soc_volt,
 							soc_volt);
 			if (ret < 0) {
+				printk(KERN_ERR
+					"COULD NOT SET SOC VOLTAGE!!!!\n");
 				goto err1;
 			}
 		}
@@ -99,17 +101,21 @@ int set_cpu_freq(int freq)
 			ret = regulator_set_voltage(pu_regulator, pu_volt,
 							pu_volt);
 			if (ret < 0) {
+				printk(KERN_ERR
+					"COULD NOT SET PU VOLTAGE!!!!\n");
 				goto err2;
 			}
 		}
 		ret = regulator_set_voltage(cpu_regulator, gp_volt,
 					    gp_volt);
 		if (ret < 0) {
+			printk(KERN_ERR "COULD NOT SET GP VOLTAGE!!!!\n");
 			goto err3;
 		}
 	}
 	ret = clk_set_rate(cpu_clk, freq);
 	if (ret != 0) {
+		printk(KERN_ERR "cannot set CPU clock rate\n");
 		goto err4;
 	}
 
@@ -117,12 +123,15 @@ int set_cpu_freq(int freq)
 		ret = regulator_set_voltage(cpu_regulator, gp_volt,
 					    gp_volt);
 		if (ret < 0) {
+			printk(KERN_ERR "COULD NOT SET GP VOLTAGE!!!!\n");
 			goto err5;
 		}
 		if (!IS_ERR(soc_regulator)) {
 			ret = regulator_set_voltage(soc_regulator, soc_volt,
 							soc_volt);
 			if (ret < 0) {
+				printk(KERN_ERR
+					"COULD NOT SET SOC VOLTAGE BACK!!!!\n");
 				goto err6;
 			}
 		}
@@ -132,6 +141,8 @@ int set_cpu_freq(int freq)
 			ret = regulator_set_voltage(pu_regulator, pu_volt,
 							pu_volt);
 			if (ret < 0) {
+				printk(KERN_ERR
+					"COULD NOT SET PU VOLTAGE!!!!\n");
 				goto err7;
 			}
 		}
@@ -145,18 +156,21 @@ err7:
 	ret = regulator_set_voltage(soc_regulator, org_soc_volt,
 							org_soc_volt);
 	if (ret < 0) {
+		printk(KERN_ERR "COULD NOT RESTORE SOC VOLTAGE!!!!\n");
 		goto err7;
 	}
 
 err6:
 	ret = regulator_set_voltage(cpu_regulator, org_gp_volt, org_gp_volt);
 	if (ret < 0) {
+		printk(KERN_ERR "COULD NOT RESTORE GP VOLTAGE!!!!\n");
 		goto err6;
 	}
 
 err5:
 	ret = clk_set_rate(cpu_clk, org_cpu_rate);
 	if (ret != 0) {
+		printk(KERN_ERR "cannot restore CPU clock rate\n");
 		goto err5;
 	}
 	return -1;
@@ -164,6 +178,7 @@ err5:
 err4:
 	ret = regulator_set_voltage(cpu_regulator, org_gp_volt, org_gp_volt);
 	if (ret < 0) {
+		printk(KERN_ERR "COULD NOT RESTORE GP VOLTAGE!!!!\n");
 		goto err4;
 	}
 
@@ -172,6 +187,7 @@ err3:
 		regulator_is_enabled(pu_regulator)) {
 		ret = regulator_set_voltage(pu_regulator, org_pu_volt, org_pu_volt);
 		if (ret < 0) {
+			printk(KERN_ERR "COULD NOT RESTORE PU VOLTAGE!!!!\n");
 			goto err3;
 		}
 	}
@@ -179,6 +195,7 @@ err2:
 	ret = regulator_set_voltage(soc_regulator, org_soc_volt,
 							org_soc_volt);
 	if (ret < 0) {
+		printk(KERN_ERR "COULD NOT RESTORE SOC VOLTAGE!!!!\n");
 		goto err2;
 	}
 err1:
@@ -296,7 +313,7 @@ static int __devinit mxc_cpufreq_init(struct cpufreq_policy *policy)
 
 	cpu_clk = clk_get(NULL, "cpu_clk");
 	if (IS_ERR(cpu_clk)) {
-		printk(KERN_DEBUG "%s: failed to get cpu clock\n", __func__);
+		printk(KERN_ERR "%s: failed to get cpu clock\n", __func__);
 		return PTR_ERR(cpu_clk);
 	}
 
@@ -346,7 +363,7 @@ static int __devinit mxc_cpufreq_init(struct cpufreq_policy *policy)
 	ret = cpufreq_frequency_table_cpuinfo(policy, imx_freq_table);
 
 	if (ret < 0) {
-		printk(KERN_DEBUG "%s: failed to register i.MXC CPUfreq with error code %d\n",
+		printk(KERN_ERR "%s: failed to register i.MXC CPUfreq with error code %d\n",
 		       __func__, ret);
 		goto err;
 	}

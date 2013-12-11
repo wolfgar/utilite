@@ -57,9 +57,11 @@
 #include <linux/mfd/mxc-hdmi-core.h>
 #include <linux/igb.h>
 #include <linux/gpio-i2cmux.h>
+#include <linux/rtc/rtc-em3027.h>
 
 #include <mach/common.h>
 #include <mach/hardware.h>
+#include <mach/mxc.h>
 #include <mach/mxc_dvfs.h>
 #include <mach/memory.h>
 #include <mach/imx-uart.h>
@@ -117,6 +119,7 @@
 #define SB_FX6_PCIE_MUX_PWR		IMX_GPIO_NR(8, 4)
 #define SB_FX6_LCD_RST			IMX_GPIO_NR(8, 11)
 
+#define SB_FX6M_EM3027_IRQ		IMX_GPIO_NR(1, 1)
 #define SB_FX6M_DVI_DDC_SEL		IMX_GPIO_NR(1, 2)
 #define SB_FX6M_DVI_HPD			IMX_GPIO_NR(1, 4)
 
@@ -124,109 +127,6 @@ static u32 board_rev;
 
 extern char *soc_reg_id;
 extern char *pu_reg_id;
-
-enum sd_pad_mode {
-	SD_PAD_MODE_LOW_SPEED,
-	SD_PAD_MODE_MED_SPEED,
-	SD_PAD_MODE_HIGH_SPEED,
-};
-
-static int plt_sd_pad_change(unsigned int index, int clock)
-{
-	/* LOW speed is the default state of SD pads */
-	static enum sd_pad_mode pad_mode = SD_PAD_MODE_LOW_SPEED;
-
-	iomux_v3_cfg_t *sd_pads_200mhz = NULL;
-	iomux_v3_cfg_t *sd_pads_100mhz = NULL;
-	iomux_v3_cfg_t *sd_pads_50mhz = NULL;
-
-	u32 sd_pads_200mhz_cnt;
-	u32 sd_pads_100mhz_cnt;
-	u32 sd_pads_50mhz_cnt;
-
-	switch (index) {
-	case 0:
-		if (cpu_is_mx6q()) {
-			sd_pads_200mhz = cm_fx6_q_sd1_200mhz;
-			sd_pads_100mhz = cm_fx6_q_sd1_100mhz;
-			sd_pads_50mhz  = cm_fx6_q_sd1_50mhz;
-
-			sd_pads_200mhz_cnt = ARRAY_SIZE(cm_fx6_q_sd1_200mhz);
-			sd_pads_100mhz_cnt = ARRAY_SIZE(cm_fx6_q_sd1_100mhz);
-			sd_pads_50mhz_cnt  = ARRAY_SIZE(cm_fx6_q_sd1_50mhz);
-		} else if (cpu_is_mx6dl()) {
-			sd_pads_200mhz = cm_fx6_dl_sd1_200mhz;
-			sd_pads_100mhz = cm_fx6_dl_sd1_100mhz;
-			sd_pads_50mhz  = cm_fx6_dl_sd1_50mhz;
-
-			sd_pads_200mhz_cnt = ARRAY_SIZE(cm_fx6_dl_sd1_200mhz);
-			sd_pads_100mhz_cnt = ARRAY_SIZE(cm_fx6_dl_sd1_100mhz);
-			sd_pads_50mhz_cnt  = ARRAY_SIZE(cm_fx6_dl_sd1_50mhz);
-		}
-	case 2:
-		if (cpu_is_mx6q()) {
-			sd_pads_200mhz = cm_fx6_q_sd3_200mhz;
-			sd_pads_100mhz = cm_fx6_q_sd3_100mhz;
-			sd_pads_50mhz  = cm_fx6_q_sd3_50mhz;
-
-			sd_pads_200mhz_cnt = ARRAY_SIZE(cm_fx6_q_sd3_200mhz);
-			sd_pads_100mhz_cnt = ARRAY_SIZE(cm_fx6_q_sd3_100mhz);
-			sd_pads_50mhz_cnt  = ARRAY_SIZE(cm_fx6_q_sd3_50mhz);
-		} else if (cpu_is_mx6dl()) {
-			sd_pads_200mhz = cm_fx6_dl_sd3_200mhz;
-			sd_pads_100mhz = cm_fx6_dl_sd3_100mhz;
-			sd_pads_50mhz  = cm_fx6_dl_sd3_50mhz;
-
-			sd_pads_200mhz_cnt = ARRAY_SIZE(cm_fx6_dl_sd3_200mhz);
-			sd_pads_100mhz_cnt = ARRAY_SIZE(cm_fx6_dl_sd3_100mhz);
-			sd_pads_50mhz_cnt  = ARRAY_SIZE(cm_fx6_dl_sd3_50mhz);
-		}
-		break;
-	default:
-		printk(KERN_ERR "no such SD host controller index %d\n", index);
-		return -EINVAL;
-	}
-
-	if (clock > 100000000) {
-		if (pad_mode == SD_PAD_MODE_HIGH_SPEED)
-			return 0;
-		BUG_ON(!sd_pads_200mhz);
-		pad_mode = SD_PAD_MODE_HIGH_SPEED;
-		return mxc_iomux_v3_setup_multiple_pads(sd_pads_200mhz,
-							sd_pads_200mhz_cnt);
-	} else if (clock > 52000000) {
-		if (pad_mode == SD_PAD_MODE_MED_SPEED)
-			return 0;
-		BUG_ON(!sd_pads_100mhz);
-		pad_mode = SD_PAD_MODE_MED_SPEED;
-		return mxc_iomux_v3_setup_multiple_pads(sd_pads_100mhz,
-							sd_pads_100mhz_cnt);
-	} else {
-		if (pad_mode == SD_PAD_MODE_LOW_SPEED)
-			return 0;
-		BUG_ON(!sd_pads_50mhz);
-		pad_mode = SD_PAD_MODE_LOW_SPEED;
-		return mxc_iomux_v3_setup_multiple_pads(sd_pads_50mhz,
-							sd_pads_50mhz_cnt);
-	}
-}
-
-static const struct esdhc_platform_data cm_fx6_sd1_data __initconst = {
-	.always_present		= 1,
-	.keep_power_at_suspend	= 1,
-	.platform_pad_change	= plt_sd_pad_change,
-};
-
-/* The default configuration is set for SB-FX6m */
-static struct esdhc_platform_data baseboard_sd3_data = {
-	.cd_type		= ESDHC_CD_NONE,
-	.cd_gpio		= -EINVAL,
-	.wp_gpio		= -EINVAL,
-	.keep_power_at_suspend	= 1,
-	.delay_line		= 0,
-	.platform_pad_change	= plt_sd_pad_change,
-	.always_present		= 1,
-};
 
 #if defined(CONFIG_MTD_NAND_GPMI_NAND)
 static int cm_fx6_gpmi_nand_init_pads(void)
@@ -875,12 +775,32 @@ static struct i2c_board_info cm_fx6_i2c1_board_info[] __initdata = {
 #endif /* CONFIG_FB_MXC_HDMI */
 };
 
+static struct em3027_platform_data sb_fx6m_rtc_pdata = {
+	.charger_resistor_sel = EM3027_TRICKLE_CHARGER_1_5K,
+};
+
 static struct i2c_board_info sb_fx6m_rtc_info = {
 	I2C_BOARD_INFO("em3027", 0x56),
+	.irq = gpio_to_irq(SB_FX6M_EM3027_IRQ),
+	.platform_data = &sb_fx6m_rtc_pdata,
 };
 
 static void sb_fx6m_rtc_register(void)
 {
+	int err;
+
+	if (cpu_is_mx6q())
+		mxc_iomux_v3_setup_pad(MX6Q_PAD_GPIO_1__GPIO_1_1);
+	else if (cpu_is_mx6dl())
+		mxc_iomux_v3_setup_pad(MX6DL_PAD_GPIO_1__GPIO_1_1);
+
+	err = gpio_request_one(SB_FX6M_EM3027_IRQ, GPIOF_IN, "rtc irq");
+	if (err) {
+		pr_err("%s: failed requesting GPIO%d: %d\n",
+		       __func__, SB_FX6M_EM3027_IRQ, err);
+		return;
+	}
+
 	baseboard_i2c_device_register(3, &sb_fx6m_rtc_info, "em3027 rtc");
 }
 
@@ -952,8 +872,53 @@ static void sb_fx6_gpio_ext_register(void)
 static inline void sb_fx6_gpio_ext_register(void) {}
 #endif /* CONFIG_GPIO_PCA953X */
 
+static const struct esdhc_platform_data cm_fx6_sd1_data __initconst = {
+	.always_present		= 1,
+	.keep_power_at_suspend	= 1,
+};
+
+/* The default configuration is set for SB-FX6m */
+static struct esdhc_platform_data baseboard_sd3_data = {
+	.cd_type		= ESDHC_CD_NONE,
+	.cd_gpio		= -EINVAL,
+	.wp_gpio		= -EINVAL,
+	.keep_power_at_suspend	= 1,
+	.delay_line		= 0,
+	.always_present		= 1,
+};
+
+static void baseboard_sd3_init(void)
+{
+	iomux_v3_cfg_t *sd3_pads;
+	iomux_v3_cfg_t *sd3_full_pads	= cm_fx6_q_sd3_full_200mhz;
+	iomux_v3_cfg_t *sd3_half_pads	= cm_fx6_q_sd3_half_200mhz;
+	unsigned int sd3_pads_cnt;
+	unsigned int sd3_full_pads_cnt	= ARRAY_SIZE(cm_fx6_q_sd3_full_200mhz);
+	unsigned int sd3_half_pads_cnt	= ARRAY_SIZE(cm_fx6_q_sd3_half_200mhz);
+
+	sd3_pads	= sd3_half_pads;
+	sd3_pads_cnt	= sd3_half_pads_cnt;
+
+	if (cpu_is_mx6dl()) {
+		sd3_full_pads		= cm_fx6_dl_sd3_full_200mhz;
+		sd3_half_pads		= cm_fx6_dl_sd3_half_200mhz;
+		sd3_full_pads_cnt	= ARRAY_SIZE(cm_fx6_dl_sd3_full_200mhz);
+		sd3_half_pads_cnt	= ARRAY_SIZE(cm_fx6_dl_sd3_half_200mhz);
+	}
+
+	if (baseboard_sd3_data.support_8bit) {
+		sd3_pads	= sd3_full_pads;
+		sd3_pads_cnt	= sd3_full_pads_cnt;
+	}
+
+	mxc_iomux_v3_setup_multiple_pads(sd3_pads, sd3_pads_cnt);
+	imx6q_add_sdhci_usdhc_imx(2, &baseboard_sd3_data);
+}
+
 static void sb_fx6_init(void)
 {
+	pr_info("CM-FX6: Detected SB-FX6 (Eval) base board\n");
+
 	baseboard_sd3_data.cd_type = ESDHC_CD_GPIO;
 	baseboard_sd3_data.cd_gpio = SB_FX6_SD3_CD;
 	baseboard_sd3_data.wp_gpio = SB_FX6_SD3_WP;
@@ -970,6 +935,7 @@ static void sb_fx6_init(void)
 	baseboard_fb_data = sb_fx6_fb_data;
 	baseboard_fb_data_size = ARRAY_SIZE(sb_fx6_fb_data);
 
+	imx6q_add_imx_snvs_rtc();
 	sb_fx6_gpio_ext_register();
 	sb_fx6_scf0403_lcd_init();
 	sb_fx6_himax_ts_init();
@@ -979,6 +945,8 @@ static void sb_fx6_init(void)
 
 static void sb_fx6m_init(void)
 {
+	pr_info("CM-FX6: Detected SB-FX6m (Utilite) base board\n");
+
 	baseboard_fb_data = sb_fx6m_fb_data;
 	baseboard_fb_data_size = ARRAY_SIZE(sb_fx6m_fb_data);
 
@@ -1002,7 +970,7 @@ static void baseboard_eeprom_setup(struct memory_accessor *mem_acc,
 	eeprom_read_mac_address(mem_acc, baseboard_igb_pdata.mac_address);
 	igb_set_platform_data(&baseboard_igb_pdata);
 
-	imx6q_add_sdhci_usdhc_imx(2, &baseboard_sd3_data);
+	baseboard_sd3_init();
 	imx6q_add_pcie(&baseboard_pcie_data);
 }
 
@@ -1779,13 +1747,6 @@ static void __init cm_fx6_init(void)
 	BUG_ON(!common_pads);
 	mxc_iomux_v3_setup_multiple_pads(common_pads, common_pads_cnt);
 
-	/*
-	 * the following is the common devices support on the shared ARM2 boards
-	 * Since i.MX6DQ/DL share the same memory/Register layout, we don't
-	 * need to diff the i.MX6DQ or i.MX6DL here. We can simply use the
-	 * mx6q_add_features() for the shared devices. For which only exist
-	 * on each indivual SOC, we can use cpu_is_mx6q/6dl() to diff it.
-	 */
 	gp_reg_id = arm2_dvfscore_data.reg_id;
 	soc_reg_id = arm2_dvfscore_data.soc_id;
 	pu_reg_id = arm2_dvfscore_data.pu_id;
@@ -1793,7 +1754,6 @@ static void __init cm_fx6_init(void)
 
 	cm_fx6_init_ipu();
 
-	imx6q_add_imx_snvs_rtc();
 	imx6q_add_imx_snvs_pwrkey();
 	pm_power_off = mx6_snvs_poweroff;
 	imx6q_add_imx_caam();
@@ -1806,6 +1766,15 @@ static void __init cm_fx6_init(void)
 	imx6q_add_anatop_thermal_imx(1, &cm_fx6_anatop_thermal_data);
 
 	imx6q_add_pm_imx(0, &mx6_arm2_pm_data);
+
+	if (cpu_is_mx6q()) {
+		mxc_iomux_v3_setup_multiple_pads(cm_fx6_q_sd1_half_200mhz,
+					 ARRAY_SIZE(cm_fx6_q_sd1_half_200mhz));
+	} else {
+		mxc_iomux_v3_setup_multiple_pads(cm_fx6_dl_sd1_half_200mhz,
+					 ARRAY_SIZE(cm_fx6_dl_sd1_half_200mhz));
+	}
+
 	imx6q_add_sdhci_usdhc_imx(0, &cm_fx6_sd1_data);
 	imx_add_viv_gpu(&imx6_gpu_data, &imx6_gpu_pdata);
 
@@ -1877,6 +1846,9 @@ early_param("cm_fx6_v4l", cm_fx6_v4l_setup);
 
 static int __init cm_fx6_init_late(void)
 {
+	if (!machine_is_cm_fx6())
+		return -ENODEV;
+
 	baseboard_dvi_register();
 	cm_fx6_init_hdmi();
 	cm_fx6_init_display();
@@ -1889,6 +1861,26 @@ static int __init cm_fx6_init_late(void)
 }
 device_initcall_sync(cm_fx6_init_late);
 
+#define CM_FX6_MIN_SOC_VOLTAGE	1250000
+#define CM_FX6_MIN_PU_VOLTAGE	1250000
+
+static void cm_fx6_adjust_cpu_op(void)
+{
+	struct cpu_op *op;
+	int num;
+
+	op = mx6_get_cpu_op(&num);
+	if (!op)
+		return;
+
+	for (num--; num >= 0; num--) {
+		if (op[num].soc_voltage < CM_FX6_MIN_SOC_VOLTAGE)
+			op[num].soc_voltage = CM_FX6_MIN_SOC_VOLTAGE;
+		if (op[num].pu_voltage < CM_FX6_MIN_PU_VOLTAGE)
+			op[num].pu_voltage = CM_FX6_MIN_PU_VOLTAGE;
+	}
+}
+
 extern void __iomem *twd_base;
 
 static void __init cm_fx6_timer_init(void)
@@ -1898,9 +1890,10 @@ static void __init cm_fx6_timer_init(void)
 	twd_base = ioremap(LOCAL_TWD_ADDR, SZ_256);
 	BUG_ON(!twd_base);
 #endif
+	cm_fx6_adjust_cpu_op();
 	mx6_clocks_init(32768, 24000000, 0, 0);
 
-	uart_clk = clk_get_sys("imx-uart.0", NULL);
+	uart_clk = clk_get_sys("imx-uart.3", NULL);
 	early_console_setup(UART4_BASE_ADDR, uart_clk);
 }
 
