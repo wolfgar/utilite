@@ -1360,7 +1360,7 @@ static void hdmi_config_AVI(struct mxc_hdmi *hdmi)
 	 ********************************************/
 
 	val = HDMI_FC_AVICONF2_IT_CONTENT_NO_DATA | ext_colorimetry |
-		HDMI_FC_AVICONF2_RGB_QUANT_DEFAULT |
+		HDMI_FC_AVICONF2_RGB_QUANT_FULL_RANGE |
 		HDMI_FC_AVICONF2_SCALING_NONE;
 	hdmi_writeb(val, HDMI_FC_AVICONF2);
 
