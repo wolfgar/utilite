@@ -2524,9 +2524,11 @@ static void do_task_release(struct ipu_task_entry *t, int fail)
 	int ret;
 	struct ipu_soc *ipu = t->ipu;
 
-	if (t->input.deinterlace.enable && !fail &&
+/* FIXME SR : Do not call this middle line correction function
+ * as it is responsible for a flickering spot in the middle of the screen. */
+/*	if (t->input.deinterlace.enable && !fail &&
 			(t->task_no & (UP_STRIPE | DOWN_STRIPE)))
-		vdi_split_process(ipu, t);
+		vdi_split_process(ipu, t); */
 
 	ipu_free_irq(ipu, t->irq, t);
 
