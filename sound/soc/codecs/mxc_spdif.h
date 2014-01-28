@@ -150,9 +150,13 @@ enum spdif_wdl {
 					 SNDRV_PCM_RATE_64000 | \
 					 SNDRV_PCM_RATE_96000)
 
+// !!! temporary workaround for broken 24bit mode !!!
+#define MXC_SPDIF_FORMATS_PLAYBACK	(SNDRV_PCM_FMTBIT_S16_LE)
+/*
 #define MXC_SPDIF_FORMATS_PLAYBACK	(SNDRV_PCM_FMTBIT_S16_LE | \
 					 SNDRV_PCM_FMTBIT_S20_3LE | \
 					 SNDRV_PCM_FMTBIT_S24_LE)
+*/
 
 #define MXC_SPDIF_FORMATS_CAPTURE	(SNDRV_PCM_FMTBIT_S24_LE)
 
