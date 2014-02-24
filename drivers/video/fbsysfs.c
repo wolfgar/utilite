@@ -497,7 +497,7 @@ static struct device_attribute device_attrs[] = {
 	__ATTR(blank, S_IRUGO|S_IWUSR, show_blank, store_blank),
 	__ATTR(console, S_IRUGO|S_IWUSR, show_console, store_console),
 	__ATTR(cursor, S_IRUGO|S_IWUSR, show_cursor, store_cursor),
-	__ATTR(mode, S_IRUGO|S_IWUSR, show_mode, store_mode),
+	__ATTR(mode, S_IRUGO|S_IWUGO, show_mode, store_mode),
 	__ATTR(modes, S_IRUGO|S_IWUSR, show_modes, store_modes),
 	__ATTR(pan, S_IRUGO|S_IWUSR, show_pan, store_pan),
 	__ATTR(virtual_size, S_IRUGO|S_IWUSR, show_virtual, store_virtual),
