@@ -408,6 +408,8 @@ static long hdmi_cec_ioctl(struct file *filp, u_int cmd,
 		val &= ~HDMI_MC_CLKDIS_CECCLK_DISABLE;
 		hdmi_writeb(val, HDMI_MC_CLKDIS);
 		hdmi_writeb(0x02, HDMI_CEC_CTRL);
+		/* Force read unlock */
+		hdmi_writeb(0x0, HDMI_CEC_LOCK);
 		val = HDMI_IH_CEC_STAT0_ERROR_INIT | HDMI_IH_CEC_STAT0_NACK | HDMI_IH_CEC_STAT0_EOM | HDMI_IH_CEC_STAT0_DONE;
 		hdmi_writeb(val, HDMI_CEC_POLARITY);
 		val = HDMI_IH_CEC_STAT0_WAKEUP | HDMI_IH_CEC_STAT0_ERROR_FOLL | HDMI_IH_CEC_STAT0_ARB_LOST;
