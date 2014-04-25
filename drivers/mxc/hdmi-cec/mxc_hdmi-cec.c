@@ -333,10 +333,9 @@ static ssize_t hdmi_cec_write(struct file *file, const char __user *buf,
 	do {
 		retry = false;
 		ret = wait_event_interruptible_timeout(tx_cec_queue, tx_answer != 0, HZ);
-		if (ret ==0) {
-			/* In case of timeout
-			 * Check that CEC clock is still active
-			 * as it may be disabled in case of change of HDMI refresh rate
+		if (ret == 0) {
+			/* In case of timeout, check that CEC clock is still active
+			 * as it may have been disabled by FB_EVENT_MODE_CHANGE handling
 			 */
 			val = hdmi_readb(HDMI_MC_CLKDIS);
 			if (val & HDMI_MC_CLKDIS_CECCLK_DISABLE) {
@@ -348,14 +347,15 @@ static ssize_t hdmi_cec_write(struct file *file, const char __user *buf,
 		}
 	} while (retry);
 
-	if (ret < 0) {
+	if (ret < 0)
 		return -ERESTARTSYS;
-	}
+
 	if (tx_answer & HDMI_IH_CEC_STAT0_DONE)
 		/* msg correctly sent */
 		ret = msg_len;
 	else
 		ret =  -EIO;
+
 	return ret;
 }
 
