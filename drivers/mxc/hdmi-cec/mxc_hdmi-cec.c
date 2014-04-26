@@ -298,7 +298,6 @@ static ssize_t hdmi_cec_write(struct file *file, const char __user *buf,
 	int ret = 0 , i = 0;
 	u8 msg[MAX_MESSAGE_LEN];
 	u8 msg_len = 0, val = 0;
-	bool retry;
 
 	pr_debug("function : %s\n", __func__);
 
@@ -330,23 +329,7 @@ static ssize_t hdmi_cec_write(struct file *file, const char __user *buf,
 	hdmi_cec_data.msg_len = msg_len;
 	mutex_unlock(&hdmi_cec_data.lock);
 
-	do {
-		retry = false;
-		ret = wait_event_interruptible_timeout(tx_cec_queue, tx_answer != 0, HZ);
-		if (ret == 0) {
-			/* In case of timeout, check that CEC clock is still active
-			 * as it may have been disabled by FB_EVENT_MODE_CHANGE handling
-			 */
-			val = hdmi_readb(HDMI_MC_CLKDIS);
-			if (val & HDMI_MC_CLKDIS_CECCLK_DISABLE) {
-				pr_info("Re-enabling CEC clock\n");
-				val &= ~HDMI_MC_CLKDIS_CECCLK_DISABLE;
-				hdmi_writeb(val, HDMI_MC_CLKDIS);
-				retry = true;
-			}
-		}
-	} while (retry);
-
+	ret = wait_event_interruptible_timeout(tx_cec_queue, tx_answer != 0, HZ);
 	if (ret < 0)
 		return -ERESTARTSYS;
 
