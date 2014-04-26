@@ -20,7 +20,6 @@
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
 #include <linux/regulator/consumer.h>
-#include <linux/pm_runtime.h>
 
 #include <linux/leds.h>
 
@@ -1523,26 +1522,12 @@ static int sdhci_get_ro(struct mmc_host *mmc)
 	return 0;
 }
 
-static int sdhci_runtime_pm_get(struct sdhci_host *host)
-{
-        return pm_runtime_get_sync(host->mmc->parent);
-}
-
-static int sdhci_runtime_pm_put(struct sdhci_host *host)
-{
-        pm_runtime_mark_last_busy(host->mmc->parent);
-        return pm_runtime_put_autosuspend(host->mmc->parent);
-}
- 
 static void sdhci_enable_sdio_irq(struct mmc_host *mmc, int enable)
 {
 	struct sdhci_host *host;
 	unsigned long flags;
 
 	host = mmc_priv(mmc);
-
-        if (enable)
-          sdhci_runtime_pm_get(host);
 
 	spin_lock_irqsave(&host->lock, flags);
 
@@ -1557,10 +1542,6 @@ out:
 	mmiowb();
 
 	spin_unlock_irqrestore(&host->lock, flags);
-        
-        if (!enable)
-            sdhci_runtime_pm_put(host);
-        
 }
 
 static int sdhci_start_signal_voltage_switch(struct mmc_host *mmc,
