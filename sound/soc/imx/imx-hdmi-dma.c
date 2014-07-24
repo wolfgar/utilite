@@ -863,26 +863,46 @@ static int hdmi_dma_copy(struct snd_pcm_substream *substream, int channel,
 	struct imx_hdmi_dma_runtime_data *rtd = runtime->private_data;
 	unsigned int count = frames_to_bytes(runtime, frames);
 	unsigned int pos_bytes = frames_to_bytes(runtime, pos);
-	u32 *hw_buf;
-	int subframe_idx;
-	u32 pcm_data;
+	int channel_no, pcm_idx, subframe_no, bits_left, sample_bits;
+	u32 pcm_data[8], pcm_temp, *hw_buf, sample_block;
+
+	static int channel_map_pcm[8] = { 0, 1, 4, 5, 3, 2, 6, 7 };
 
 	/* Copy pcm data from userspace and add frame info.
 	 * Destination is hw_buffer. */
 	hw_buf = (u32 *)(rtd->hw_buffer.area + (pos_bytes * rtd->buffer_ratio));
 
+	sample_bits = rtd->sample_align * 8;
+	sample_block = rtd->sample_align * rtd->channels;
+
 	while (count > 0) {
-		for (subframe_idx = 1 ; subframe_idx <= rtd->channels ; subframe_idx++) {
+		if (copy_from_user(pcm_data, buf, sample_block))
+			return -EFAULT;
 
-			if (copy_from_user(&pcm_data, buf, rtd->sample_align))
-				return -EFAULT;
+		buf += sample_block;
+		count -= sample_block;
 
-			buf += rtd->sample_align;
-			count -= rtd->sample_align;
+		channel_no = pcm_idx = 0;
+		do {
+			pcm_temp = pcm_data[pcm_idx++];
+			bits_left = 32;
+			for (;;) {
+				/* re-map channels */
+				subframe_no = (iec_header.B.linear_pcm == 0) ?
+					channel_map_pcm[channel_no] : channel_no;
 
-			/* Save the header info to the audio dma buffer */
-			*hw_buf++ = hdmi_dma_add_frame_info(rtd, pcm_data, subframe_idx);
-		}
+				/* Save the header info to the audio dma buffer */
+				hw_buf[subframe_no] = hdmi_dma_add_frame_info(rtd, pcm_temp, subframe_no + 1);
+				channel_no++;
+
+				if (bits_left <= sample_bits)
+					break;
+
+				bits_left -= sample_bits;
+				pcm_temp >>= sample_bits;
+			}
+		} while (channel_no < rtd->channels);
+		hw_buf += rtd->channels;
 		hdmi_dma_incr_frame_idx(rtd);
 	}
 
