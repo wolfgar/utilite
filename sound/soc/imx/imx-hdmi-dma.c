@@ -326,6 +326,9 @@ static u32 hdmi_dma_add_frame_info(struct imx_hdmi_dma_runtime_data *rtd,
 		subframe.B.c = iec_header.U >> rtd->frame_idx;
 	}
 
+	/* fill v (validity) */
+	subframe.B.v = !iec_header.B.linear_pcm;
+
 	/* fill data */
 	if (rtd->sample_bits == 16)
 		subframe.B.data = pcm_data << 8;

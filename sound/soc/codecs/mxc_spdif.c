@@ -367,7 +367,7 @@ static u8 reverse_bits(u8 input)
 
 static void spdif_write_channel_status(void)
 {
-	unsigned int ch_status;
+	unsigned int ch_status, regval;
 
 	ch_status =
 		(reverse_bits(mxc_spdif_control.ch_status[0]) << 16) |
@@ -381,6 +381,12 @@ static void spdif_write_channel_status(void)
 
 	pr_debug("STCSCH: 0x%06x\n", __raw_readl(spdif_base_addr + SPDIF_REG_STCSCH));
 	pr_debug("STCSCL: 0x%06x\n", __raw_readl(spdif_base_addr + SPDIF_REG_STCSCL));
+
+	/* Set outgoing validity (0: pcm, 1: non-audio) */
+	regval = __raw_readl(spdif_base_addr + SPDIF_REG_SCR) | SCR_VAL_CLEAR;
+	if (mxc_spdif_control.ch_status[0] & IEC958_AES0_NONAUDIO)
+	regval &= ~SCR_VAL_CLEAR;
+	__raw_writel(regval, SPDIF_REG_SCR + spdif_base_addr);
 }
 
 /*
